@@ -1,6 +1,9 @@
 #!/usr/bin/lua
 xpcall( function() dofile( "config.lua") end, function() end )
 VALKYRIE_ROOT = VALKYRIE_ROOT or os.getenv("FPCVALKYRIE_ROOT") or "../fpcvalkyrie/"
+if VALKYRIE_ROOT:sub(-1) ~= "/" and VALKYRIE_ROOT:sub(-1) ~= "\\" then
+	VALKYRIE_ROOT = VALKYRIE_ROOT.."/"
+end
 dofile (VALKYRIE_ROOT.."scripts/lua_make.lua")
 
 local BUILT = false
@@ -40,6 +43,8 @@ makefile = {
 		MACOSX = {	
 			"-dOSX_APP_BUNDLE",
 			"-Fl/usr/local/lib",
+			"-Fl/opt/homebrew/lib",
+			"-Fl/opt/homebrew/opt/ncurses/lib",
 			"-k-macos_version_min -k11.0",
 		},
 	},

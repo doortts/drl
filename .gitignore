@@ -38,5 +38,6 @@ bin/steam_appid.txt
 jh_small.ico
 bin/drl
 bin/drlwad
+bin/Contents/
 drl-win-deploy/
 src/.github/copilot-instructions.md

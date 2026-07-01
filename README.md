@@ -41,6 +41,16 @@ DRL uses a few sophisticated Lua tricks however v5.1 specifically is compulsory:
 * Upgrading probably won't work simply due to the changes in env-tables.
 * Initially the reason to keep being 5.1 compatible for both DRL and JH was due to LuaJIT compatibility, but that point is moot now.
 
+#### macOS notes
+On Apple Silicon/Homebrew systems, install FPC, ncurses and SDL3 libraries, and build Lua 5.1 from source. Before compiling DRL, patch the sibling fpcvalkyrie checkout so it uses Homebrew-style SDL3 dynamic libraries instead of the obsolete SDLmain/SDL.framework linker setup:
+
+```
+brew install fpc readline ncurses sdl3 sdl3_image sdl3_mixer
+./scripts/patch-fpcvalkyrie-macos.sh ../fpcvalkyrie
+```
+
+The build also needs `lua5.1` on `PATH` and `liblua5.1.a` in a linker path such as `/opt/homebrew/lib` or `/usr/local/lib`.
+
 ### Updating Lua (no specific IDE required)
 #### Configuration
 1. Download lua 5.1 (e.g. 5.1.5) from https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/. Unzip it
