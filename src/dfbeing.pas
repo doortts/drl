@@ -3273,11 +3273,24 @@ function lua_being_relocate(L: Plua_State): Integer; cdecl;
 var State  : TDRLLuaState;
     Thing  : TThing;
     Target : TCoord2D;
+    Level  : TLevel;
+    Being  : TBeing;
 begin
   State.Init(L);
   Thing := State.ToObject(1) as TThing;
   if State.IsNil(2) then Exit(0);
   Target := State.ToCoord(2);
+  if not ( Thing.Parent is TLevel ) then Exit(0);
+  Level := TLevel( Thing.Parent );
+  if not Level.isProperCoord( Target ) then Exit(0);
+  if Thing is TBeing then
+  begin
+    if not Level.isPassable( Target ) then Exit(0);
+    Being := Level.Being[ Target ];
+    if ( Being <> nil ) and ( Being <> Thing ) then Exit(0);
+  end;
+  if Thing is TPlayer then
+    DRL.ClearMovementState;
   if GraphicsVersion then
     if Thing is TBeing then
       if Thing is TPlayer then

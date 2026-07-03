@@ -114,6 +114,11 @@ type TInputKey = (
 
 type TInputKeySet   = set of TInputKey;
 
+const DRL_KEY_ARROW_UPLEFT    = IOKeyCodeMax + 1;
+      DRL_KEY_ARROW_UPRIGHT   = IOKeyCodeMax + 2;
+      DRL_KEY_ARROW_DOWNLEFT  = IOKeyCodeMax + 3;
+      DRL_KEY_ARROW_DOWNRIGHT = IOKeyCodeMax + 4;
+
 type TKeyInfoEntry = record
     ID           : Ansistring;
     Group        : Ansistring;
@@ -121,6 +126,10 @@ type TKeyInfoEntry = record
     Name         : Ansistring;
     Description  : Ansistring;
 end;
+
+function DRLKeyCodeToStringShort( aKey : Integer ) : Ansistring;
+function DRLVirtualKeyCodeToInput( aKey : Integer ) : TInputKey;
+function DRLArrowChordKeyCode( aLeft, aRight, aUp, aDown : Boolean ) : Integer;
 
 const KeyInfo : array[TInputKey] of TKeyInfoEntry = (
     // Special value for none
@@ -227,5 +236,38 @@ const KeyInfo : array[TInputKey] of TKeyInfoEntry = (
 );
 implementation
 
-end.
+function DRLKeyCodeToStringShort( aKey : Integer ) : Ansistring;
+begin
+  case aKey of
+    DRL_KEY_ARROW_UPLEFT    : Exit( 'Up+Left' );
+    DRL_KEY_ARROW_UPRIGHT   : Exit( 'Up+Right' );
+    DRL_KEY_ARROW_DOWNLEFT  : Exit( 'Down+Left' );
+    DRL_KEY_ARROW_DOWNRIGHT : Exit( 'Down+Right' );
+  end;
+  if ( aKey >= 0 ) and ( aKey <= IOKeyCodeMax )
+    then Exit( IOKeyCodeToStringShort( TIOKeyCode( aKey ) ) );
+  Exit( 'Unknown' );
+end;
 
+function DRLVirtualKeyCodeToInput( aKey : Integer ) : TInputKey;
+begin
+  case aKey of
+    DRL_KEY_ARROW_UPLEFT    : Exit( INPUT_WALKUPLEFT );
+    DRL_KEY_ARROW_UPRIGHT   : Exit( INPUT_WALKUPRIGHT );
+    DRL_KEY_ARROW_DOWNLEFT  : Exit( INPUT_WALKDOWNLEFT );
+    DRL_KEY_ARROW_DOWNRIGHT : Exit( INPUT_WALKDOWNRIGHT );
+    else Exit( INPUT_NONE );
+  end;
+end;
+
+function DRLArrowChordKeyCode( aLeft, aRight, aUp, aDown : Boolean ) : Integer;
+begin
+  if ( aLeft = aRight ) or ( aUp = aDown ) then Exit( 0 );
+  if aLeft  and aUp   then Exit( DRL_KEY_ARROW_UPLEFT );
+  if aRight and aUp   then Exit( DRL_KEY_ARROW_UPRIGHT );
+  if aLeft  and aDown then Exit( DRL_KEY_ARROW_DOWNLEFT );
+  if aRight and aDown then Exit( DRL_KEY_ARROW_DOWNRIGHT );
+  Exit( 0 );
+end;
+
+end.

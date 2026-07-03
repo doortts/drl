@@ -329,6 +329,7 @@ var iCoord    : TCoord2D;
     iSound    : Word;
 begin
   iLevel := DRL.Level;
+  iVisible := False;
   if not iLevel.isProperCoord( aWhere ) then Exit;
 
   if aData.SoundID <> '' then
@@ -613,19 +614,21 @@ end;
 
 procedure TDRLIO.Reconfigure( aConfig : TLuaConfig );
 var iInput : TInputKey;
+    iKey   : Integer;
     procedure CtrlAssign( aWhat : TInputKey; aFrom : TInputKey );
-    var iKey : TIOKeyCode;
+    var iCtrlKey : Integer;
     begin
-      iKey := aConfig.Commands[ Configuration.GetInteger(KeyInfo[aFrom].ID) ];
-      if ( iKey and IOKeyCodeCtrlMask ) = 0
-        then aConfig.Commands[ iKey + IOKeyCodeCtrlMask ] := Word(aWhat)
+      iCtrlKey := Configuration.GetInteger(KeyInfo[aFrom].ID);
+      if ( iCtrlKey < 0 ) or ( iCtrlKey > IOKeyCodeMax ) then Exit;
+      if ( iCtrlKey and IOKeyCodeCtrlMask ) = 0
+        then aConfig.Commands[ iCtrlKey + IOKeyCodeCtrlMask ] := Word(aWhat)
         else Log( LogWarn, 'Movement key assigned with Ctrl prevents targeting move assignemnt!' );
     end;
     function GetString( aWhat : TInputKey ) : Ansistring;
     var iKey : TIOKeyCode;
     begin
       iKey := Configuration.GetInteger(KeyInfo[aWhat].ID);
-      Exit( IOKeyCodeToStringShort( iKey ) );
+      Exit( DRLKeyCodeToStringShort( iKey ) );
     end;
 begin
   FAudio.Reconfigure;
@@ -635,7 +638,11 @@ begin
 
   for iInput in TInputKey do
     if KeyInfo[iInput].ID <> '' then
-      aConfig.Commands[ Configuration.GetInteger(KeyInfo[iInput].ID) ] := Word(iInput);
+    begin
+      iKey := Configuration.GetInteger(KeyInfo[iInput].ID);
+      if ( iKey >= 0 ) and ( iKey <= IOKeyCodeMax ) then
+        aConfig.Commands[ iKey ] := Word(iInput);
+    end;
 
   CtrlAssign( INPUT_TARGETLEFT,      INPUT_WALKLEFT );
   CtrlAssign( INPUT_TARGETRIGHT,     INPUT_WALKRIGHT );
@@ -1495,4 +1502,3 @@ begin
 end;
 
 end.
-

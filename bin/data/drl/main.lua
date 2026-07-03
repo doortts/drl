@@ -189,28 +189,33 @@ function drl.register_base_data()
 		end,
 
 		OnEnter = function( self, being )
+			local empty = { EF_NOBEINGS, EF_NOITEMS, EF_NOSTAIRS, EF_NOBLOCK, EF_NOHARM, EF_NOSPAWN }
+			local function random_target()
+				return level:random_empty_coord( empty )
+					or level:random_empty_coord{ EF_NOBEINGS, EF_NOBLOCK, EF_NOHARM, EF_NOSPAWN }
+					or level:random_empty_coord{ EF_NOBEINGS, EF_NOBLOCK }
+			end
 			if not self.target then
-				self.target = level:random_empty_coord{ EF_NOBEINGS, EF_NOITEMS, EF_NOSTAIRS, EF_NOBLOCK, EF_NOHARM, EF_NOSPAWN }
+				self.target = random_target()
 			end
 			-- Explosions can have sounds, but by the time the sound plays, the player has already moved
 			level:play_sound( "teleport.use", being.position )
 			level:explosion( being.position, { range = 4, delay = 50, color = GREEN } )
 			being:msg( "You feel yanked away!", being:get_name(true,true).." suddenly disappears!" )
 			local target = self.target
-			local empty = { EF_NOBEINGS, EF_NOITEMS, EF_NOSTAIRS, EF_NOBLOCK, EF_NOHARM, EF_NOSPAWN }
-			if cells[ level.map[ target ] ].flags[ CF_BLOCKMOVE ] then
+			if ( not target ) or ( not area.FULL:contains( target ) ) or cells[ level.map[ target ] ].flags[ CF_BLOCKMOVE ] then
 				being:msg("You feel out of place!")
 				being:apply_damage(15, TARGET_INTERNAL, DAMAGE_FIRE )
-				target = level:random_empty_coord( empty )
+				target = random_target()
 			end
-			if level:get_being( target ) then
+			if target and level:get_being( target ) then
 				local tgt = level:get_being( target )
 				being:msg("Suddenly you feel weird!")
 				tgt:msg("Argh! You feel like someone is trying to implode you!")
 				tgt:apply_damage(15, TARGET_INTERNAL, DAMAGE_FIRE )
-				target = level:random_empty_coord( empty )
+				target = random_target()
 			end
-			if being.__ptr then
+			if target and being.__ptr then
 				being:relocate( target )
 				being:msg(nil,"Suddenly "..being:get_name(false,false).." appears out of nowhere!")
 				being.scount = being.scount - 1000
@@ -908,4 +913,3 @@ drl.help = {
 	{ "disclaim", "Disclaimer" },
 	{ "credits", "Credits" },
 }
-

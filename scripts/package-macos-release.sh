@@ -51,6 +51,7 @@ VERSION_INC
 
 rm -rf "$work_dir"
 mkdir -p "$build_bin" "$build_tmp" "$macos" "$resources" "$frameworks"
+"$repo_root/scripts/generate-macos-icon.sh" "$repo_root/src/icon.ico" "$repo_root/bin/iconfile.icns"
 
 fpc_common=(
   "-FE$build_bin"
@@ -80,6 +81,7 @@ chmod 755 "$macos/drl-bin"
 for file in config.lua font.dat manual.txt unix_notes.txt version.txt version_api.txt drl.wad core.wad; do
   cp "$repo_root/bin/$file" "$resources/"
 done
+cp "$repo_root/bin/iconfile.icns" "$resources/iconfile.icns"
 ditto --norsrc "$repo_root/bin/data" "$resources/data"
 ditto --norsrc "$repo_root/bin/modules" "$resources/modules"
 
@@ -115,6 +117,8 @@ cat > "$contents/Info.plist" <<PLIST
   <string>en</string>
   <key>CFBundleExecutable</key>
   <string>DRL</string>
+  <key>CFBundleIconFile</key>
+  <string>iconfile.icns</string>
   <key>CFBundleIdentifier</key>
   <string>org.chaosforge.drl</string>
   <key>CFBundleInfoDictionaryVersion</key>

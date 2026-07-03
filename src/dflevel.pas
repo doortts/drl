@@ -1686,8 +1686,8 @@ var iState   : TDRLLuaState;
 begin
   iState.Init(L);
   iLevel := iState.ToObject(1) as TLevel;
-  Log( iState.ToPosition(2).ToString );
   if iState.IsNil(2) then Exit(0);
+  Log( iState.ToPosition(2).ToString );
   if iState.IsTable(3) or iState.IsTable(4) then
   begin
     if iState.IsTable(3) then
@@ -2017,4 +2017,3 @@ end;
 
 
 end.
-

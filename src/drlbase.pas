@@ -32,6 +32,10 @@ type TDRLState = ( DSStart,      DSMenu,    DSLoading,   DSCrashLoading,
                     DSPlaying,    DSSaving,  DSNextLevel,
                     DSQuit,       DSFinished );
 
+type TArrowKeyState = set of Byte;
+
+const DIAGONAL_ARROW_CHORD_WINDOW = 30;
+
 type
 
 { TDRL }
@@ -66,6 +70,7 @@ TDRL = class(TVObject)
        function HandleUsableCommand( aItem : TItem ) : Boolean;
        function HandleSwapWeaponCommand : Boolean;
        function HandlePickupCommand( aAlt : Boolean ) : Boolean;
+       procedure ClearMovementState;
        procedure ResetAutoTarget;
      private
        procedure Apply( aResult : TMenuResult );
@@ -73,6 +78,10 @@ TDRL = class(TVObject)
        function HandleKeyEvent( aEvent : TIOEvent ) : Boolean;
        function HandlePadMovement( aEvent : TIOEvent ) : Boolean;
        function HandlePadEvent( aEvent : TIOEvent ) : Boolean;
+       procedure UpdateArrowKeyState( const aEvent : TIOEvent );
+       function DiagonalArrowChordsEnabled : Boolean;
+       function DiagonalArrowInput( aInput : TInputKey; aKeyCode : Byte ) : TInputKey;
+       function TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
        function MoveTargetEvent( aCoord : TCoord2D ) : Boolean;
        procedure PreAction;
        procedure CreatePlayer( aResult : TMenuResult );
@@ -88,6 +97,7 @@ TDRL = class(TVObject)
        FLastFrameTime   : QWord;
        FStore           : TStoreInterface;
        FPadMoved        : Boolean;
+       FArrowKeyState   : TArrowKeyState;
        FModules         : TDRLModules;
 
        FCoreHooks       : TFlags;
@@ -406,9 +416,19 @@ begin
   FLastInputTime   := 0;
   FPlayerView      := nil;
   FPadMoveActive   := False;
+  FArrowKeyState   := [];
 
   FParticles.Clear;
   if IO <> nil then IO.Reset;
+end;
+
+procedure TDRL.ClearMovementState;
+begin
+  FArrowKeyState := [];
+  FPadMoveActive := False;
+  FPadMoveNext   := 0;
+  if Player <> nil then
+    Player.MultiMove.Stop;
 end;
 
 procedure TDRL.Reconfigure;
@@ -424,6 +444,7 @@ begin
   Setting_RunOverItems     := Configuration.GetBoolean( 'run_over_items' );
   Setting_HideHints        := Configuration.GetBoolean( 'hide_hints' );
   Setting_EmptyConfirm     := Configuration.GetBoolean( 'empty_confirm' );
+  Setting_DiagonalArrowMove:= Configuration.GetBoolean( 'diagonal_arrow_movement' );
   Setting_Mouse            := Configuration.GetBoolean( 'enable_mouse' );
   Setting_GamepadRumble    := Configuration.GetBoolean( 'enable_rumble' );
   Setting_MouseEdgePan     := Configuration.GetBoolean( 'mouse_edge_pan' );
@@ -1162,6 +1183,109 @@ begin
   Exit( False );
 end;
 
+procedure TDRL.UpdateArrowKeyState( const aEvent : TIOEvent );
+begin
+  if not ( aEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then
+    Exit;
+
+  if aEvent.Key.Pressed then
+  begin
+    if aEvent.Key.ModState = []
+      then Include( FArrowKeyState, aEvent.Key.Code )
+      else Exclude( FArrowKeyState, aEvent.Key.Code );
+  end
+  else
+    Exclude( FArrowKeyState, aEvent.Key.Code );
+end;
+
+function TDRL.DiagonalArrowChordsEnabled : Boolean;
+begin
+  if not GraphicsVersion then Exit( False );
+  Exit( Setting_DiagonalArrowMove or
+        ( Configuration.GetInteger( KeyInfo[INPUT_WALKUPLEFT].ID ) = DRL_KEY_ARROW_UPLEFT ) or
+        ( Configuration.GetInteger( KeyInfo[INPUT_WALKUPRIGHT].ID ) = DRL_KEY_ARROW_UPRIGHT ) or
+        ( Configuration.GetInteger( KeyInfo[INPUT_WALKDOWNLEFT].ID ) = DRL_KEY_ARROW_DOWNLEFT ) or
+        ( Configuration.GetInteger( KeyInfo[INPUT_WALKDOWNRIGHT].ID ) = DRL_KEY_ARROW_DOWNRIGHT ) );
+end;
+
+function TDRL.DiagonalArrowInput( aInput : TInputKey; aKeyCode : Byte ) : TInputKey;
+var iKey           : Integer;
+    iDiagonalInput : TInputKey;
+begin
+  Result := aInput;
+  if not GraphicsVersion then Exit;
+  if not ( aKeyCode in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then Exit;
+
+  iKey := DRLArrowChordKeyCode(
+    VKEY_LEFT  in FArrowKeyState,
+    VKEY_RIGHT in FArrowKeyState,
+    VKEY_UP    in FArrowKeyState,
+    VKEY_DOWN  in FArrowKeyState
+  );
+  if iKey = 0 then Exit;
+
+  iDiagonalInput := DRLVirtualKeyCodeToInput( iKey );
+  if iDiagonalInput = INPUT_NONE then Exit;
+
+  if Configuration.GetInteger( KeyInfo[iDiagonalInput].ID ) = iKey then
+    Exit( iDiagonalInput );
+  if Setting_DiagonalArrowMove and ( aInput in [ INPUT_WALKLEFT, INPUT_WALKRIGHT, INPUT_WALKUP, INPUT_WALKDOWN ] ) then
+    Exit( iDiagonalInput );
+end;
+
+function TDRL.TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
+var iEvent         : TIOEvent;
+    iState         : TArrowKeyState;
+    iKey           : Integer;
+    iDiagonalInput : TInputKey;
+    iDeadline      : DWord;
+begin
+  Result := False;
+  if ( not DiagonalArrowChordsEnabled ) or aEvent.Key.Repeated then Exit;
+  if not ( aEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then Exit;
+  if not ( aInput in [ INPUT_WALKLEFT, INPUT_WALKRIGHT, INPUT_WALKUP, INPUT_WALKDOWN ] ) then Exit;
+
+  iDeadline := IO.Driver.GetMs + DIAGONAL_ARROW_CHORD_WINDOW;
+  repeat
+    if not IO.Driver.EventPending then
+    begin
+      if IO.Driver.GetMs >= iDeadline then Exit;
+      IO.Driver.Sleep( 1 );
+      Continue;
+    end;
+
+    if not IO.Driver.PeekEvent( iEvent ) then Exit;
+    if not ( ( iEvent.EType = VEVENT_KEYDOWN ) and
+             ( not iEvent.Key.Repeated ) and
+             iEvent.Key.Pressed and
+             ( iEvent.Key.ModState = [] ) and
+             ( iEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) ) then
+      Exit;
+
+    iState := FArrowKeyState;
+    Include( iState, iEvent.Key.Code );
+    iKey := DRLArrowChordKeyCode(
+      VKEY_LEFT  in iState,
+      VKEY_RIGHT in iState,
+      VKEY_UP    in iState,
+      VKEY_DOWN  in iState
+    );
+    if iKey = 0 then Exit;
+
+    iDiagonalInput := DRLVirtualKeyCodeToInput( iKey );
+    if iDiagonalInput = INPUT_NONE then Exit;
+    if ( not Setting_DiagonalArrowMove ) and ( Configuration.GetInteger( KeyInfo[iDiagonalInput].ID ) <> iKey ) then
+      Exit;
+
+    IO.Driver.PollEvent( iEvent );
+    UpdateArrowKeyState( iEvent );
+    IO.OnEvent( iEvent );
+    IO.Root.OnEvent( iEvent );
+    aInput := iDiagonalInput;
+    Exit( True );
+  until False;
+end;
+
 function TDRL.HandleKeyEvent( aEvent : TIOEvent ) : Boolean;
 var iInput : TInputKey;
 begin
@@ -1181,6 +1305,8 @@ begin
     Config.RunKey( IO.KeyCode );
     Exit( HandleCommand( TCommand.Create( COMMAND_SKIP ) ) );
   end;
+  TryConsumeDiagonalArrowChord( iInput, aEvent );
+  iInput := DiagonalArrowInput( iInput, aEvent.Key.Code );
   if iInput <> INPUT_NONE then
   begin
     // Handle commands that should be handled by the UI
@@ -1402,6 +1528,7 @@ repeat
 
       if ( Player.MultiMove.Active ) then
       begin
+        FArrowKeyState := [];
         iInput := Player.GetMultiMoveInput;
         if iInput <> INPUT_NONE then
           Action( iInput );
@@ -1433,6 +1560,8 @@ repeat
       end;
 
       if not IO.Driver.PollEvent( iEvent ) then continue;
+      if iEvent.EType in [ VEVENT_KEYDOWN, VEVENT_KEYUP ] then
+        UpdateArrowKeyState( iEvent );
       if IO.OnEvent( iEvent ) or IO.Root.OnEvent( iEvent ) then Continue;
 
       if (iEvent.EType = VEVENT_SYSTEM) and (iEvent.System.Code = VIO_SYSEVENT_QUIT) then

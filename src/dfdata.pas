@@ -152,6 +152,7 @@ const
   Setting_RunOverItems     : Boolean = False;
   Setting_HideHints        : Boolean = False;
   Setting_EmptyConfirm     : Boolean = False;
+  Setting_DiagonalArrowMove: Boolean = False;
   Setting_UnlockAll        : Boolean = False;
   Setting_MenuSound        : Boolean = False;
   Setting_MouseEdgePan     : Boolean = False;

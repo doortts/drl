@@ -8,6 +8,12 @@ dofile (VALKYRIE_ROOT.."scripts/lua_make.lua")
 
 local BUILT = false
 
+function ensure_macos_icon()
+	if OS == "MACOSX" then
+		os.exit_on_error(os.execute("bash scripts/generate-macos-icon.sh src/icon.ico bin/iconfile.icns"))
+	end
+end
+
 function set_demo(path, value)
     local new_value = value and "true" or "false"
 
@@ -53,6 +59,7 @@ makefile = {
 		local s = make.gitrevision()
 		v.core = "drl"
 		make.writeversion( "src/version.inc", v, s )
+		ensure_macos_icon()
 		--make.svncheck(s)
 	end,
 	post_build = function()

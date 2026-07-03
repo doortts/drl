@@ -32,6 +32,8 @@ const SETTINGSVIEW_KEYS : set of TSettingsViewState = [
   SETTINGSVIEW_KEYLEGACY
 ];
 
+type TSettingsArrowKeyState = set of Byte;
+
 type TSettingsView = class( TIOLayer )
   constructor Create;
   procedure Update( aDTime : Integer; aActive : Boolean ); override;
@@ -42,13 +44,15 @@ type TSettingsView = class( TIOLayer )
 protected
   procedure Reconfigure;
   procedure Reset( aGroup : TConfigurationGroup );
-  function KeyCapture( aValue : PInteger; aSelected : Boolean ) : Boolean;
+  function KeyCapture( aValue : PInteger; aSelected : Boolean; const aID : Ansistring ) : Boolean;
 protected
   FState       : TSettingsViewState;
   FSize        : TIOPoint;
   FWSize       : TIOPoint;
   FCapture     : Boolean;
-  FKey         : Word;
+  FKey         : Integer;
+  FCaptureID   : Ansistring;
+  FArrowKeyState : TSettingsArrowKeyState;
   FResInput    : Boolean;
   FResolutions : array of Ansistring;
   FModInput    : Boolean;
@@ -62,7 +66,7 @@ end;
 implementation
 
 uses math, sysutils, vutil, vdebug, vtig, vtigio, vsound,
-     drlconfiguration, drlbase;
+     drlconfiguration, drlbase, drlkeybindings;
 
 const CStates : array[ TSettingsViewState ] of record Title, ID : Ansistring; end = (
    ( Title : 'Settings'; ID : 'general' ),
@@ -92,6 +96,14 @@ const CSub : array[ 1..10 ] of record State : TSettingsViewState; Select, Desc :
   ( State : SETTINGSVIEW_KEYLEGACY;   Select : 'Keybindings - Legacy';     Desc : 'Keybindings that are no longer needed, but some may want them back.' )
 );
 
+function IsDiagonalArrowBinding( const aID : Ansistring ) : Boolean;
+begin
+  Exit( ( aID = 'input_walkupleft' ) or
+        ( aID = 'input_walkupright' ) or
+        ( aID = 'input_walkdownleft' ) or
+        ( aID = 'input_walkdownright' ) );
+end;
+
 constructor TSettingsView.Create;
 var i, iCount : Integer;
 begin
@@ -102,6 +114,9 @@ begin
   FWSize := Point( 50, 10 );
 
   FCapture  := False;
+  FKey      := 0;
+  FCaptureID := '';
+  FArrowKeyState := [];
   FResInput := False;
   FModInput := False;
   FWarning  := '';
@@ -233,7 +248,7 @@ begin
             if iEntry.Name <> '' then
             begin
               with iEntry as TIntegerConfigurationEntry do
-                KeyCapture( Access, iSelected = i );
+                KeyCapture( Access, iSelected = i, iEntry.ID );
               if iSelected = i then iHover := iEntry;
               Inc( i );
             end;
@@ -384,12 +399,39 @@ begin
 end;
 
 function TSettingsView.HandleEvent( const aEvent : TIOEvent ) : Boolean;
+var iChord : Integer;
 begin
-  if FCapture and (aEvent.EType = VEVENT_KEYDOWN) and (aEvent.Key.Code <> 0) then
+  if FCapture and ( aEvent.EType in [ VEVENT_KEYDOWN, VEVENT_KEYUP ] ) and ( aEvent.Key.Code <> 0 ) then
   begin
-    if aEvent.Key.Code = VKEY_ESCAPE
-      then FKey := VKEY_ESCAPE
-      else FKey := IOKeyEventToIOKeyCode( aEvent.Key );
+    if FKey <> 0 then Exit( True );
+
+    if ( aEvent.EType = VEVENT_KEYDOWN ) and ( aEvent.Key.Code = VKEY_ESCAPE ) then
+    begin
+      FKey := VKEY_ESCAPE;
+      Exit( True );
+    end;
+
+    if aEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] then
+    begin
+      if aEvent.Key.Pressed
+        then Include( FArrowKeyState, aEvent.Key.Code )
+        else Exclude( FArrowKeyState, aEvent.Key.Code );
+
+      if IsDiagonalArrowBinding( FCaptureID ) then
+      begin
+        iChord := DRLArrowChordKeyCode(
+          VKEY_LEFT  in FArrowKeyState,
+          VKEY_RIGHT in FArrowKeyState,
+          VKEY_UP    in FArrowKeyState,
+          VKEY_DOWN  in FArrowKeyState
+        );
+        if iChord <> 0 then FKey := iChord;
+        Exit( True );
+      end;
+    end;
+
+    if aEvent.EType = VEVENT_KEYDOWN then
+      FKey := IOKeyEventToIOKeyCode( aEvent.Key );
   end;
   Exit( True );
 end;
@@ -400,9 +442,9 @@ begin
   inherited Destroy;
 end;
 
-function TSettingsView.KeyCapture( aValue : PInteger; aSelected : Boolean ) : Boolean;
+function TSettingsView.KeyCapture( aValue : PInteger; aSelected : Boolean; const aID : Ansistring ) : Boolean;
 begin
-  VTIG_InputField( IOKeyCodeToStringShort( aValue^ ) );
+  VTIG_InputField( DRLKeyCodeToStringShort( aValue^ ) );
   if aSelected then
   begin
     if FCapture then
@@ -417,6 +459,8 @@ begin
         if FKey <> VKEY_ESCAPE then
           aValue^ := FKey;
         FKey := 0;
+        FCaptureID := '';
+        FArrowKeyState := [];
       end;
       VTIG_EventClear;
     end
@@ -425,6 +469,8 @@ begin
       begin
         FCapture := True;
         FKey     := 0;
+        FCaptureID := aID;
+        FArrowKeyState := [];
         Exit( False );
       end;
     if VTIG_Event( [VTIG_IE_BACKSPACE] ) then
@@ -453,4 +499,3 @@ begin
 end;
 
 end.
-

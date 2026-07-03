@@ -151,6 +151,10 @@ begin
     .SetName('Confirm firing empty weapon')
     .SetDescription('Setting to {!Enabled} will make the game wait for confirmation if trying to fire an empty weapon')
     ;
+  iGroup.AddToggle( 'diagonal_arrow_movement', False )
+    .SetName('Diagonal arrow movement')
+    .SetDescription('Setting to {!Enabled} will allow diagonal movement by holding two arrow keys.')
+    ;
   iGroup.AddToggle( 'enable_mouse', True )
     .SetName('Mouse control')
     .SetDescription('Setting to {!Disabled} will turn off interaction and visuals of the mouse.')
@@ -185,4 +189,3 @@ begin
 end;
 
 end.
-
