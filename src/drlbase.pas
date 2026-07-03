@@ -80,7 +80,8 @@ TDRL = class(TVObject)
        function HandlePadEvent( aEvent : TIOEvent ) : Boolean;
        procedure UpdateArrowKeyState( const aEvent : TIOEvent );
        function DiagonalArrowChordsEnabled : Boolean;
-       function SuppressActiveDiagonalArrowChord( const aEvent : TIOEvent ) : Boolean;
+       function DiagonalArrowChordInput( const aState : TArrowKeyState ) : TInputKey;
+       function ApplyDiagonalArrowChordInput( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
        function TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
        function MoveTargetEvent( aCoord : TCoord2D ) : Boolean;
        procedure PreAction;
@@ -1220,17 +1221,49 @@ begin
         ( Configuration.GetInteger( KeyInfo[INPUT_WALKDOWNRIGHT].ID ) = DRL_KEY_ARROW_DOWNRIGHT ) );
 end;
 
-function TDRL.SuppressActiveDiagonalArrowChord( const aEvent : TIOEvent ) : Boolean;
+function TDRL.DiagonalArrowChordInput( const aState : TArrowKeyState ) : TInputKey;
+var iKey : Integer;
+begin
+  Result := INPUT_NONE;
+  iKey := DRLArrowChordKeyCode(
+    VKEY_LEFT  in aState,
+    VKEY_RIGHT in aState,
+    VKEY_UP    in aState,
+    VKEY_DOWN  in aState
+  );
+  if iKey = 0 then Exit;
+
+  Result := DRLVirtualKeyCodeToInput( iKey );
+  if Result = INPUT_NONE then Exit;
+  if ( not Setting_DiagonalArrowMove ) and ( Configuration.GetInteger( KeyInfo[Result].ID ) <> iKey ) then
+    Result := INPUT_NONE;
+end;
+
+function TDRL.ApplyDiagonalArrowChordInput( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
+var iDiagonalInput : TInputKey;
 begin
   Result := False;
-  if not FDiagonalArrowChordActive then Exit;
+  if not DiagonalArrowChordsEnabled then Exit;
   if not ( aEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then Exit;
-  if ( FDiagonalArrowChordState - FArrowKeyState ) <> [] then
+  if FDiagonalArrowChordActive and ( ( FDiagonalArrowChordState - FArrowKeyState ) <> [] ) then
   begin
     FDiagonalArrowChordActive := False;
     FDiagonalArrowChordState  := [];
-    Exit;
   end;
+
+  if aEvent.Key.Pressed and aEvent.Key.Repeated then
+  begin
+    iDiagonalInput := DiagonalArrowChordInput( FArrowKeyState );
+    if iDiagonalInput <> INPUT_NONE then
+    begin
+      aInput := iDiagonalInput;
+      FDiagonalArrowChordActive := True;
+      FDiagonalArrowChordState  := FArrowKeyState;
+      Exit( False );
+    end;
+  end;
+
+  if not FDiagonalArrowChordActive then Exit;
   if aEvent.Key.Pressed and ( aEvent.Key.Code in FDiagonalArrowChordState ) then
     Exit( True );
 end;
@@ -1238,7 +1271,6 @@ end;
 function TDRL.TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
 var iEvent         : TIOEvent;
     iState         : TArrowKeyState;
-    iKey           : Integer;
     iDiagonalInput : TInputKey;
     iDeadline      : DWord;
 begin
@@ -1266,18 +1298,8 @@ begin
 
     iState := FArrowKeyState;
     Include( iState, iEvent.Key.Code );
-    iKey := DRLArrowChordKeyCode(
-      VKEY_LEFT  in iState,
-      VKEY_RIGHT in iState,
-      VKEY_UP    in iState,
-      VKEY_DOWN  in iState
-    );
-    if iKey = 0 then Exit;
-
-    iDiagonalInput := DRLVirtualKeyCodeToInput( iKey );
+    iDiagonalInput := DiagonalArrowChordInput( iState );
     if iDiagonalInput = INPUT_NONE then Exit;
-    if ( not Setting_DiagonalArrowMove ) and ( Configuration.GetInteger( KeyInfo[iDiagonalInput].ID ) <> iKey ) then
-      Exit;
 
     IO.Driver.PollEvent( iEvent );
     UpdateArrowKeyState( iEvent );
@@ -1297,7 +1319,7 @@ begin
   IO.KeyCode := IOKeyEventToIOKeyCode( aEvent.Key );
   iInput     := TInputKey( Config.Commands[ IO.KeyCode ] );
 
-  if SuppressActiveDiagonalArrowChord( aEvent ) then Exit( False );
+  if ApplyDiagonalArrowChordInput( iInput, aEvent ) then Exit( False );
 
   // Handle key-repeat
   if aEvent.Key.Repeated then
