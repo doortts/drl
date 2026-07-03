@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-src="${1:-$repo_root/src/icon.ico}"
+src="${1:-$repo_root/src/drl.ico}"
 out="${2:-$repo_root/bin/iconfile.icns}"
 tmp_root="${TMPDIR:-/tmp}"
 tmp_root="${tmp_root%/}"

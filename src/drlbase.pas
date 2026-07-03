@@ -34,7 +34,7 @@ type TDRLState = ( DSStart,      DSMenu,    DSLoading,   DSCrashLoading,
 
 type TArrowKeyState = set of Byte;
 
-const DIAGONAL_ARROW_CHORD_WINDOW = 30;
+const DIAGONAL_ARROW_CHORD_WINDOW = 60;
 
 type
 
@@ -80,7 +80,7 @@ TDRL = class(TVObject)
        function HandlePadEvent( aEvent : TIOEvent ) : Boolean;
        procedure UpdateArrowKeyState( const aEvent : TIOEvent );
        function DiagonalArrowChordsEnabled : Boolean;
-       function DiagonalArrowInput( aInput : TInputKey; aKeyCode : Byte ) : TInputKey;
+       function SuppressActiveDiagonalArrowChord( const aEvent : TIOEvent ) : Boolean;
        function TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
        function MoveTargetEvent( aCoord : TCoord2D ) : Boolean;
        procedure PreAction;
@@ -98,6 +98,8 @@ TDRL = class(TVObject)
        FStore           : TStoreInterface;
        FPadMoved        : Boolean;
        FArrowKeyState   : TArrowKeyState;
+       FDiagonalArrowChordActive : Boolean;
+       FDiagonalArrowChordState  : TArrowKeyState;
        FModules         : TDRLModules;
 
        FCoreHooks       : TFlags;
@@ -417,6 +419,8 @@ begin
   FPlayerView      := nil;
   FPadMoveActive   := False;
   FArrowKeyState   := [];
+  FDiagonalArrowChordActive := False;
+  FDiagonalArrowChordState  := [];
 
   FParticles.Clear;
   if IO <> nil then IO.Reset;
@@ -425,6 +429,8 @@ end;
 procedure TDRL.ClearMovementState;
 begin
   FArrowKeyState := [];
+  FDiagonalArrowChordActive := False;
+  FDiagonalArrowChordState  := [];
   FPadMoveActive := False;
   FPadMoveNext   := 0;
   if Player <> nil then
@@ -1196,6 +1202,12 @@ begin
   end
   else
     Exclude( FArrowKeyState, aEvent.Key.Code );
+
+  if FDiagonalArrowChordActive and ( ( FDiagonalArrowChordState - FArrowKeyState ) <> [] ) then
+  begin
+    FDiagonalArrowChordActive := False;
+    FDiagonalArrowChordState  := [];
+  end;
 end;
 
 function TDRL.DiagonalArrowChordsEnabled : Boolean;
@@ -1208,29 +1220,19 @@ begin
         ( Configuration.GetInteger( KeyInfo[INPUT_WALKDOWNRIGHT].ID ) = DRL_KEY_ARROW_DOWNRIGHT ) );
 end;
 
-function TDRL.DiagonalArrowInput( aInput : TInputKey; aKeyCode : Byte ) : TInputKey;
-var iKey           : Integer;
-    iDiagonalInput : TInputKey;
+function TDRL.SuppressActiveDiagonalArrowChord( const aEvent : TIOEvent ) : Boolean;
 begin
-  Result := aInput;
-  if not GraphicsVersion then Exit;
-  if not ( aKeyCode in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then Exit;
-
-  iKey := DRLArrowChordKeyCode(
-    VKEY_LEFT  in FArrowKeyState,
-    VKEY_RIGHT in FArrowKeyState,
-    VKEY_UP    in FArrowKeyState,
-    VKEY_DOWN  in FArrowKeyState
-  );
-  if iKey = 0 then Exit;
-
-  iDiagonalInput := DRLVirtualKeyCodeToInput( iKey );
-  if iDiagonalInput = INPUT_NONE then Exit;
-
-  if Configuration.GetInteger( KeyInfo[iDiagonalInput].ID ) = iKey then
-    Exit( iDiagonalInput );
-  if Setting_DiagonalArrowMove and ( aInput in [ INPUT_WALKLEFT, INPUT_WALKRIGHT, INPUT_WALKUP, INPUT_WALKDOWN ] ) then
-    Exit( iDiagonalInput );
+  Result := False;
+  if not FDiagonalArrowChordActive then Exit;
+  if not ( aEvent.Key.Code in [ VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN ] ) then Exit;
+  if ( FDiagonalArrowChordState - FArrowKeyState ) <> [] then
+  begin
+    FDiagonalArrowChordActive := False;
+    FDiagonalArrowChordState  := [];
+    Exit;
+  end;
+  if aEvent.Key.Pressed and ( aEvent.Key.Code in FDiagonalArrowChordState ) then
+    Exit( True );
 end;
 
 function TDRL.TryConsumeDiagonalArrowChord( var aInput : TInputKey; const aEvent : TIOEvent ) : Boolean;
@@ -1282,6 +1284,8 @@ begin
     IO.OnEvent( iEvent );
     IO.Root.OnEvent( iEvent );
     aInput := iDiagonalInput;
+    FDiagonalArrowChordActive := True;
+    FDiagonalArrowChordState  := iState;
     Exit( True );
   until False;
 end;
@@ -1292,6 +1296,8 @@ begin
   if aEvent.Key.Code = 0 then Exit( False );
   IO.KeyCode := IOKeyEventToIOKeyCode( aEvent.Key );
   iInput     := TInputKey( Config.Commands[ IO.KeyCode ] );
+
+  if SuppressActiveDiagonalArrowChord( aEvent ) then Exit( False );
 
   // Handle key-repeat
   if aEvent.Key.Repeated then
@@ -1306,7 +1312,6 @@ begin
     Exit( HandleCommand( TCommand.Create( COMMAND_SKIP ) ) );
   end;
   TryConsumeDiagonalArrowChord( iInput, aEvent );
-  iInput := DiagonalArrowInput( iInput, aEvent.Key.Code );
   if iInput <> INPUT_NONE then
   begin
     // Handle commands that should be handled by the UI
@@ -1529,6 +1534,8 @@ repeat
       if ( Player.MultiMove.Active ) then
       begin
         FArrowKeyState := [];
+        FDiagonalArrowChordActive := False;
+        FDiagonalArrowChordState  := [];
         iInput := Player.GetMultiMoveInput;
         if iInput <> INPUT_NONE then
           Action( iInput );

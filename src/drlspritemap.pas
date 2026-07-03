@@ -105,6 +105,7 @@ private
   procedure PushDecals;
   procedure PushObjects( aDTime : Integer );
   procedure PushSprite( aPos : TVec2i; const aSprite : TSprite; aLight : Byte; aZ : Integer );
+  function ResolveSpriteLayer( aSpriteID : DWord; out aLayer : TSpriteDataSet; out aLayerSpriteID : DWord ) : Boolean;
   procedure PushMultiSpriteTerrain( aCoord : TCoord2D; const aSprite : TSprite; aZ : Integer; aRotation : Byte );
   procedure PushSpriteTerrainPart( aCoord : TCoord2D; const aSprite : TSprite; aZ : Integer; aPart : TSpritePart = F );
   procedure PushTarget( aSpriteID : DWord; aPosition : TVec2i; aColor : TColor; aSize : Float );
@@ -538,8 +539,7 @@ var iSprite   : TSprite;
   end;
 begin
   iSprite   := GetSprite( aSprite, ZeroCoord2D );
-  iLayer    := FSpriteEngine.Layers[ iSprite.SpriteID[0] div 100000 ];
-  iSpriteID := iSprite.SpriteID[0] mod 100000;
+  if not ResolveSpriteLayer( iSprite.SpriteID[0], iLayer, iSpriteID ) then Exit;
 
   iSizeH := FSpriteEngine.Grid.X div 2;
 
@@ -563,14 +563,29 @@ begin
   end;
 end;
 
+function TDRLSpriteMap.ResolveSpriteLayer( aSpriteID : DWord; out aLayer : TSpriteDataSet; out aLayerSpriteID : DWord ) : Boolean;
+var iLayerID : DWord;
+begin
+  Result := False;
+  aLayer := nil;
+  aLayerSpriteID := 0;
+  if aSpriteID = 0 then Exit;
+  if FSpriteEngine = nil then Exit;
+  iLayerID := aSpriteID div 100000;
+  if iLayerID >= FSpriteEngine.Layers.Size then Exit;
+  aLayerSpriteID := aSpriteID mod 100000;
+  if aLayerSpriteID = 0 then Exit;
+  aLayer := FSpriteEngine.Layers[ iLayerID ];
+  Exit( aLayer <> nil );
+end;
+
 procedure TDRLSpriteMap.PushSprite( aPos : TVec2i; const aSprite : TSprite; aLight : Byte; aZ : Integer ) ;
 var iSize     : Byte;
     iLayer    : TSpriteDataSet;
     iSpriteID : DWord;
     iCosColor : TColor;
 begin
-  iLayer    := FSpriteEngine.Layers[ aSprite.SpriteID[0] div 100000 ];
-  iSpriteID := aSprite.SpriteID[0] mod 100000;
+  if not ResolveSpriteLayer( aSprite.SpriteID[0], iLayer, iSpriteID ) then Exit;
 
   iSize := 1;
   if SF_LARGE in aSprite.Flags then
@@ -739,8 +754,7 @@ var iColors   : TGLRawQColor;
   end;
 const TOP : Single = 8.0 / 32.0;
 begin
-  iLayer    := FSpriteEngine.Layers[ aSprite.SpriteID[0] div 100000 ];
-  iSpriteID := aSprite.SpriteID[0] mod 100000;
+  if not ResolveSpriteLayer( aSprite.SpriteID[0], iLayer, iSpriteID ) then Exit;
 
   iLight[0] := FLightMap[aCoord.X-1,aCoord.Y-1];
   iLight[1] := FLightMap[aCoord.X-1,aCoord.Y  ];
@@ -792,8 +806,7 @@ var iColors   : TGLRawQColor;
     iLayer.PushPart( iSpriteID, aPa, aPb, @iColors, aColor, ColorZero, aColor, DRL_Z_FX, aStart, aEnd );
   end;
 begin
-  iLayer    := FSpriteEngine.Layers[ aSpriteID div 100000 ];
-  iSpriteID := aSpriteID mod 100000;
+  if not ResolveSpriteLayer( aSpriteID, iLayer, iSpriteID ) then Exit;
 
   if Abs( aSize - 1.0 ) < 0.001 then
   begin
@@ -880,8 +893,7 @@ var i         : Byte;
     iSpriteID : DWord;
     iLight    : array[0..3] of Byte;
 begin
-  iLayer    := FSpriteEngine.Layers[ aSprite.SpriteID[0] div 100000 ];
-  iSpriteID := aSprite.SpriteID[0] mod 100000;
+  if not ResolveSpriteLayer( aSprite.SpriteID[0], iLayer, iSpriteID ) then Exit;
 
   iLight[0] := FLightMap[aCoord.X-1,aCoord.Y-1];
   iLight[1] := FLightMap[aCoord.X-1,aCoord.Y  ];
@@ -1172,6 +1184,8 @@ var iDMinX   : Word;
     iRange   : Single;
     iOff     : Integer;
     iSprite  : TSprite;
+    iLayer   : TSpriteDataSet;
+    iSpriteID: DWord;
 begin
   iDMinX := FShift.X div FSpriteEngine.Grid.X + 1;
   iDMaxX := Min(FShift.X div FSpriteEngine.Grid.X + (IO.Driver.GetSizeX div FSpriteEngine.Grid.X + 1),MAXX);
@@ -1250,8 +1264,8 @@ begin
           PushSprite( Vec2i( iX-1, iY-1 ) * FSpriteEngine.Grid, GetBeingSprite( iBeing ), 40, iZ + DRL_Z_BEINGS )
         else if DRL.Level.BeingIntuited(iCoord, iBeing) then
         begin
-          with FSpriteEngine.Layers[ HARDSPRITE_MARK div 100000 ] do
-            Push( HARDSPRITE_MARK mod 100000, iCoord, ColorWhite, NewColor( Magenta ), ColorZero, NewColor( Magenta ), DRL_Z_FX-1 );
+          if ResolveSpriteLayer( HARDSPRITE_MARK, iLayer, iSpriteID ) then
+            iLayer.Push( iSpriteID, iCoord, ColorWhite, NewColor( Magenta ), ColorZero, NewColor( Magenta ), DRL_Z_FX-1 );
         end;
     end;
 
@@ -1264,12 +1278,12 @@ begin
         if (not DRL.Level.isVisible( FTargetList[iL] )) or
            (not DRL.Level.isEmpty( FTargetList[iL], [ EF_NOBLOCK, EF_NOVISION ] )) then
           iColor := NewColor( 128, 0, 0 );
-        with FSpriteEngine.Layers[ HARDSPRITE_SELECT div 100000 ] do
-          Push( HARDSPRITE_SELECT mod 100000, FTargetList[iL], ColorWhite, iColor, ColorZero, iColor, DRL_Z_FX );
+        if ResolveSpriteLayer( HARDSPRITE_SELECT, iLayer, iSpriteID ) then
+          iLayer.Push( iSpriteID, FTargetList[iL], ColorWhite, iColor, ColorZero, iColor, DRL_Z_FX );
       end;
       if FTargetList.Size > 0 then
-        with FSpriteEngine.Layers[ HARDSPRITE_MARK div 100000 ] do
-          Push( HARDSPRITE_MARK mod 100000, FTarget, ColorWhite, FTargetColor, ColorZero, FTargetColor, DRL_Z_FX );
+        if ResolveSpriteLayer( HARDSPRITE_MARK, iLayer, iSpriteID ) then
+          iLayer.Push( iSpriteID, FTarget, ColorWhite, FTargetColor, ColorZero, FTargetColor, DRL_Z_FX );
     end
   else
     if Setting_AutoTarget and ( FAutoTarget.X * FAutoTarget.Y <> 0 ) then
@@ -1286,8 +1300,8 @@ begin
   if FGridActive then
   for iY := 1 to MAXY do
     for iX := iDMinX to iDMaxX do
-    with FSpriteEngine.Layers[ HARDSPRITE_GRID div 100000 ] do
-      Push( HARDSPRITE_GRID mod 100000, NewCoord2D( iX, iY ), NewColor( 50, 50, 50, 50 ), ColorBlack, ColorZero, ColorBlack, DRL_Z_ITEMS );
+    if ResolveSpriteLayer( HARDSPRITE_GRID, iLayer, iSpriteID ) then
+      iLayer.Push( iSpriteID, NewCoord2D( iX, iY ), NewColor( 50, 50, 50, 50 ), ColorBlack, ColorZero, ColorBlack, DRL_Z_ITEMS );
 
 end;
 
@@ -1298,6 +1312,8 @@ var iData  : TDecalArray;
     iCoord : TCoord2D;
     iLight : Byte;
     iDark  : Boolean;
+    iLayer : TSpriteDataSet;
+    iSpriteID : DWord;
 //    iLQuad : TGLRawQColor;
   function GetLight( aPos : TVec2i ) : Byte;
   var iCoord   : TCoord2D;
@@ -1312,7 +1328,7 @@ var iData  : TDecalArray;
     Exit( Round( ( 1 - iFPos.Y ) * iX1 + iFPos.Y * iX2 ) );
   end;
 
-  begin
+begin
   iData := DRL.Level.Decals.Data;
   iDark := Player.Flags[ BF_DARKNESS ];
   for iDecal in iData do
@@ -1334,8 +1350,8 @@ var iData  : TDecalArray;
 //    iLQuad.Data[2] := TVec3b.Create( iLight, iLight, iLight );
 //    iLQuad.Data[3] := TVec3b.Create( iLight, iLight, iLight );
 
-    with FSpriteEngine.Layers[ iDecal.Sprite div 100000 ] do
-      PushXY( iDecal.Sprite mod 100000, 1, iPos, NewColor( iLight, iLight, iLight ), ColorZero, ColorBlack, ColorZero, DRL_Z_DECAL )
+    if ResolveSpriteLayer( iDecal.Sprite, iLayer, iSpriteID ) then
+      iLayer.PushXY( iSpriteID, 1, iPos, NewColor( iLight, iLight, iLight ), ColorZero, ColorBlack, ColorZero, DRL_Z_DECAL )
   end;
 end;
 
@@ -1398,4 +1414,3 @@ begin
 end;
 
 end.
-

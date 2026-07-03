@@ -10,7 +10,7 @@ local BUILT = false
 
 function ensure_macos_icon()
 	if OS == "MACOSX" then
-		os.exit_on_error(os.execute("bash scripts/generate-macos-icon.sh src/icon.ico bin/iconfile.icns"))
+		os.exit_on_error(os.execute("bash scripts/generate-macos-icon.sh src/drl.ico bin/iconfile.icns"))
 	end
 end
 
@@ -202,7 +202,7 @@ makefile = {
 		publisher   = "ChaosForge",
 		license     = "install\\install_license.txt",
 		info_after  = "install\\install_after.txt",
-		iss_icon    = "src\\icon.ico",
+		iss_icon    = "src\\drl.ico",
 		iss_image   = "install\\install.bmp",
 		iss_simage  = "install\\install_small.bmp",
 		iss_url     = "http://www.chaosforge.org/",

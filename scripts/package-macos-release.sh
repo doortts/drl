@@ -51,7 +51,7 @@ VERSION_INC
 
 rm -rf "$work_dir"
 mkdir -p "$build_bin" "$build_tmp" "$macos" "$resources" "$frameworks"
-"$repo_root/scripts/generate-macos-icon.sh" "$repo_root/src/icon.ico" "$repo_root/bin/iconfile.icns"
+"$repo_root/scripts/generate-macos-icon.sh" "$repo_root/src/drl.ico" "$repo_root/bin/iconfile.icns"
 
 fpc_common=(
   "-FE$build_bin"
