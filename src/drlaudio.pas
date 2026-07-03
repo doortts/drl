@@ -199,42 +199,65 @@ var iCount   : DWord;
   var iFileName : Ansistring;
       iStream   : TStream;
   begin
-    if iDataFile <> nil then
-    begin
-      iFileName := ExtractFileName( aPath );
-      if iDataFile.FileExists( iFileName, 'music' ) then
+    try
+      {$IFDEF Darwin}
+      if LowerCase( ExtractFileExt( aPath ) ) = '.mid' then Exit;
+      {$ENDIF}
+      if iDataFile <> nil then
       begin
-        iStream := iDataFile.GetFile( iFileName, 'music' );
-        try
-          Sound.RegisterMusic( iStream, iDataFile.GetFileSize( iFileName, 'music' ), aID, ExtractFileExt( iFileName ) );
-        finally
-          FreeAndNil( iStream );
+        iFileName := ExtractFileName( aPath );
+        if iDataFile.FileExists( iFileName, 'music' ) then
+        begin
+          iStream := iDataFile.GetFile( iFileName, 'music' );
+          try
+            Sound.RegisterMusic( iStream, iDataFile.GetFileSize( iFileName, 'music' ), aID, ExtractFileExt( iFileName ) );
+          finally
+            FreeAndNil( iStream );
+          end;
+          Exit;
         end;
+      end;
+      if not FileExists( aPath ) then
+      begin
+        Log( LOGWARN, 'Skipping missing music "%s" (%s)', [aID, aPath] );
         Exit;
       end;
+      Sound.RegisterMusic( aPath, aID );
+    except
+      on E : Exception do
+        Log( LOGWARN, 'Skipping music "%s" (%s): %s', [aID, aPath, E.Message] );
     end;
-    Sound.RegisterMusic( aPath, aID );
   end;
 
   procedure RegisterSample( const aPath : Ansistring; aID : Ansistring );
   var iFileName : Ansistring;
       iStream   : TStream;
   begin
-    if iDataFile <> nil then
-    begin
-      iFileName := ExtractFileName( aPath );
-      if iDataFile.FileExists( iFileName, 'sound' ) then
+    try
+      if iDataFile <> nil then
       begin
-        iStream := iDataFile.GetFile( iFileName, 'sound' );
-        try
-          Sound.RegisterSample( iStream, iDataFile.GetFileSize( iFileName, 'sound' ), aID );
-        finally
-          FreeAndNil( iStream );
+        iFileName := ExtractFileName( aPath );
+        if iDataFile.FileExists( iFileName, 'sound' ) then
+        begin
+          iStream := iDataFile.GetFile( iFileName, 'sound' );
+          try
+            Sound.RegisterSample( iStream, iDataFile.GetFileSize( iFileName, 'sound' ), aID );
+          finally
+            FreeAndNil( iStream );
+          end;
+          Exit;
         end;
+      end;
+      if not FileExists( aPath ) then
+      begin
+        Log( LOGWARN, 'Skipping missing sound "%s" (%s)', [aID, aPath] );
         Exit;
       end;
+      Sound.RegisterSample( aPath, aID );
+    except
+      on E : Exception do
+        Log( LOGWARN, 'Skipping sound "%s" (%s): %s', [aID, aPath, E.Message] );
     end;
-    Sound.RegisterSample( aPath, aID );
   end;
 
 begin
@@ -399,4 +422,3 @@ begin
 end;
 
 end.
-

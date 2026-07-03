@@ -21,7 +21,7 @@ fi
 
 export DYLD_LIBRARY_PATH="/opt/homebrew/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
 
-exec "$bin_dir/drl" -graphics -nosound \
+exec "$bin_dir/drl" -graphics \
   -config "$bin_dir/config.lua" \
   -datapath "$bin_dir/" \
   -writepath "$bin_dir/" \
