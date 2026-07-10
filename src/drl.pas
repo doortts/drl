@@ -185,8 +185,8 @@ try
       drlbase.DRL.Reset;
     until ForceRestart = '';
   finally
-    FreeAndNil( Configuration );
     FreeAndNil( drlbase.DRL );
+    FreeAndNil( Configuration );
   end;
 except on e : Exception do
   begin
@@ -198,5 +198,4 @@ except on e : Exception do
 end;
 
 end.
-
 

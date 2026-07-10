@@ -32,6 +32,17 @@ function SelectWindowPixelSize(
   aScreenWidth, aScreenHeight,
   aSavedWidth, aSavedHeight: Integer
 ): TDRLWindowSize;
+function IsManualWindowResize(
+  aFullscreen, aPersistenceReady: Boolean;
+  var aExpectedWidth, aExpectedHeight: Integer;
+  aActualWidth, aActualHeight: Integer
+): Boolean;
+procedure QueueResizeSave(var aPending: Boolean; var aQuietMS: DWord);
+function AdvanceResizeSave(
+  var aPending: Boolean;
+  var aQuietMS: DWord;
+  aElapsedMS, aDelayMS: DWord
+): Boolean;
 
 implementation
 
@@ -137,6 +148,45 @@ begin
     Result.Width := aScreenWidth;
     Result.Height := aScreenHeight;
   end;
+end;
+
+function IsManualWindowResize(
+  aFullscreen, aPersistenceReady: Boolean;
+  var aExpectedWidth, aExpectedHeight: Integer;
+  aActualWidth, aActualHeight: Integer
+): Boolean;
+begin
+  if aFullscreen or (not aPersistenceReady) then Exit(False);
+  if (aExpectedWidth > 0) and (aExpectedHeight > 0) and
+     (aExpectedWidth = aActualWidth) and
+     (aExpectedHeight = aActualHeight) then Exit(False);
+  aExpectedWidth := 0;
+  aExpectedHeight := 0;
+  Exit(True);
+end;
+
+procedure QueueResizeSave(var aPending: Boolean; var aQuietMS: DWord);
+begin
+  aPending := True;
+  aQuietMS := 0;
+end;
+
+function AdvanceResizeSave(
+  var aPending: Boolean;
+  var aQuietMS: DWord;
+  aElapsedMS, aDelayMS: DWord
+): Boolean;
+begin
+  if not aPending then Exit(False);
+  if (aQuietMS >= aDelayMS) or
+     (aElapsedMS >= aDelayMS - aQuietMS) then
+  begin
+    aPending := False;
+    aQuietMS := 0;
+    Exit(True);
+  end;
+  Inc(aQuietMS, aElapsedMS);
+  Exit(False);
 end;
 
 end.

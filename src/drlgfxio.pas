@@ -77,6 +77,9 @@ type
     function FullScreenCallback( aEvent : TIOEvent ) : Boolean;
     procedure ResetVideoMode;
     procedure ApplyDrawableResize;
+    procedure MarkProgrammaticResize( aWidth, aHeight : Integer );
+    procedure QueueWindowSizeSave;
+    procedure FlushWindowSizeSave;
     procedure RecalculateScaling( aInitialize : Boolean );
     procedure CalculateConsoleParams;
     procedure SetMinimapScale( aScale : Byte );
@@ -128,6 +131,12 @@ type
 
     FConsoleSizeX : Integer;
     FConsoleSizeY : Integer;
+
+    FResizePersistenceReady : Boolean;
+    FResizeSavePending       : Boolean;
+    FResizeQuietMS           : DWord;
+    FExpectedResizeWidth     : Integer;
+    FExpectedResizeHeight    : Integer;
   public
     property QuadSheet   : TGLQuadList read FQuadSheet;
     property TextSheet   : TGLQuadList read FTextSheet;
@@ -443,6 +452,8 @@ end;
 
 procedure TDRLGFXIO.Reset;
 begin
+  if FResizeSavePending and (Configuration <> nil) then
+    FlushWindowSizeSave;
   inherited Reset;
   FTextures.Clear;
   FAnimations.Clear;
@@ -464,6 +475,11 @@ begin
   FBloodValueTarget := 0;
   FConsoleSizeX     := 80;
   FConsoleSizeY     := 25;
+  FResizePersistenceReady := False;
+  FResizeSavePending := False;
+  FResizeQuietMS := 0;
+  FExpectedResizeWidth := 0;
+  FExpectedResizeHeight := 0;
 
   FQuadSheet.Reset;
   FTextSheet.Reset;
@@ -500,6 +516,8 @@ var iCoreData   : TVDataFile;
     iFontFormat : Ansistring;
     iReadRaw    : Boolean;
     iModule     : TDRLModule;
+    iWindowWidth : LongInt;
+    iWindowHeight: LongInt;
 begin
   FGPDetected := DRL.Store.IsSteamDeck;
   iModule     := DRL.Modules.CoreModule;
@@ -550,6 +568,18 @@ begin
   inherited Initialize( iRenderer );
 
   SetMinimapScale( FMiniScale );
+  if not FFullscreen then
+  begin
+    iWindowWidth := 0;
+    iWindowHeight := 0;
+    if SDL_GetWindowSize(
+      TSDLIODriver(FIODriver).NativeWindow,
+      @iWindowWidth,
+      @iWindowHeight
+    ) then
+      MarkProgrammaticResize(iWindowWidth, iWindowHeight);
+  end;
+  FResizePersistenceReady := True;
 end;
 
 procedure TDRLGFXIO.Reconfigure(aConfig: TLuaConfig);
@@ -628,6 +658,8 @@ end;
 
 destructor TDRLGFXIO.Destroy;
 begin
+  if FResizeSavePending and (Configuration <> nil) then
+    FlushWindowSizeSave;
   FreeAndNil( FMCursor );
   FreeAndNil( FQuadSheet );
   FreeAndNil( FTextSheet );
@@ -980,6 +1012,17 @@ var iMousePoint : TIOPoint;
     iBloodValue : Single;
     iBloodTarget: Single;
 begin
+  if AdvanceResizeSave(
+    FResizeSavePending,
+    FResizeQuietMS,
+    aMSec,
+    500
+  ) then
+  begin
+    FResizeSavePending := True;
+    FlushWindowSizeSave;
+  end;
+
   if not Assigned( FQuadRenderer ) then Exit;
 
   if (FMCursor <> nil) and FMCursor.Active and (FTime - FLastMouseTime > 3000) then
@@ -1153,6 +1196,8 @@ var iSDLFlags   : TSDLIOFlags;
     iRequestedSize : TDRLWindowSize;
     iRequestedWidth : Integer;
     iRequestedHeight: Integer;
+    iWindowWidth    : LongInt;
+    iWindowHeight   : LongInt;
 begin
   iSDLFlags := [ SDLIO_OpenGL ];
   iWidth    := Configuration.GetInteger('screen_width');
@@ -1192,6 +1237,17 @@ begin
       iSDLFlags
     );
   ApplyDrawableResize;
+  if not FFullscreen then
+  begin
+    iWindowWidth := 0;
+    iWindowHeight := 0;
+    if SDL_GetWindowSize(
+      TSDLIODriver(FIODriver).NativeWindow,
+      @iWindowWidth,
+      @iWindowHeight
+    ) then
+      MarkProgrammaticResize(iWindowWidth, iWindowHeight);
+  end;
   TGLConsoleRenderer( FConsole ).HideCursor;
 end;
 
@@ -1212,6 +1268,28 @@ begin
     SpriteMap.NewShift := SpriteMap.ShiftValue( Player.Position );
 end;
 
+procedure TDRLGFXIO.MarkProgrammaticResize( aWidth, aHeight : Integer );
+begin
+  FExpectedResizeWidth := aWidth;
+  FExpectedResizeHeight := aHeight;
+end;
+
+procedure TDRLGFXIO.QueueWindowSizeSave;
+begin
+  Configuration.AccessInteger('window_pixel_width')^ := FIODriver.GetSizeX;
+  Configuration.AccessInteger('window_pixel_height')^ := FIODriver.GetSizeY;
+  QueueResizeSave(FResizeSavePending, FResizeQuietMS);
+end;
+
+procedure TDRLGFXIO.FlushWindowSizeSave;
+begin
+  if not FResizeSavePending then Exit;
+  FResizeSavePending := False;
+  FResizeQuietMS := 0;
+  if not Configuration.Write(SettingsPath) then
+    FResizeSavePending := True;
+end;
+
 function TDRLGFXIO.FullScreenCallback ( aEvent : TIOEvent ) : Boolean;
 begin
   FFullscreen := not TSDLIODriver(FIODriver).FullScreen;
@@ -1225,12 +1303,33 @@ begin
 end;
 
 function TDRLGFXIO.OnEvent( const iEvent : TIOEvent ) : Boolean;
-var iValue : Integer;
+var iValue          : Integer;
+    iWindowWidth    : LongInt;
+    iWindowHeight   : LongInt;
+    iManualResize   : Boolean;
 begin
   if (iEvent.EType = VEVENT_SYSTEM) and
      (iEvent.System.Code = VIO_SYSEVENT_RESIZE) then
   begin
+    iWindowWidth := 0;
+    iWindowHeight := 0;
+    if SDL_GetWindowSize(
+      TSDLIODriver(FIODriver).NativeWindow,
+      @iWindowWidth,
+      @iWindowHeight
+    ) then
+      iManualResize := IsManualWindowResize(
+        FFullscreen,
+        FResizePersistenceReady,
+        FExpectedResizeWidth,
+        FExpectedResizeHeight,
+        iWindowWidth,
+        iWindowHeight
+      )
+    else
+      iManualResize := False;
     ApplyDrawableResize;
+    if iManualResize then QueueWindowSizeSave;
     Exit(True);
   end;
 

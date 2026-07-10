@@ -29,6 +29,35 @@ begin
   AssertSize(aName + ' pixels', aPixelWidth, aPixelHeight, aActual.PixelSize);
 end;
 
+procedure AssertTrue(const aName: AnsiString; aActual: Boolean);
+begin
+  if not aActual then
+    raise Exception.Create(aName + ': expected true');
+end;
+
+procedure AssertFalse(const aName: AnsiString; aActual: Boolean);
+begin
+  if aActual then
+    raise Exception.Create(aName + ': expected false');
+end;
+
+procedure AssertInteger(
+  const aName: AnsiString;
+  aExpected, aActual: Integer
+);
+begin
+  if aActual <> aExpected then
+    raise Exception.CreateFmt(
+      '%s: expected %d, got %d',
+      [aName, aExpected, aActual]
+    );
+end;
+
+var iPending: Boolean;
+    iQuietMS: DWord;
+    iExpectedWidth: Integer;
+    iExpectedHeight: Integer;
+
 begin
   if SelectPreWindowPixelDensity(1.0, 2.0) <> 2.0 then
     raise Exception.Create('current display mode density must override content scale');
@@ -93,6 +122,80 @@ begin
     'automatic remains automatic without a saved size',
     0, 0,
     SelectWindowPixelSize(0, 0, 0, 0)
+  );
+  iExpectedWidth := 960;
+  iExpectedHeight := 600;
+  AssertFalse(
+    'matching internal resize is not manual',
+    IsManualWindowResize(
+      False, True,
+      iExpectedWidth, iExpectedHeight,
+      960, 600
+    )
+  );
+  AssertFalse(
+    'delayed matching internal resize is not manual',
+    IsManualWindowResize(
+      False, True,
+      iExpectedWidth, iExpectedHeight,
+      960, 600
+    )
+  );
+  AssertTrue(
+    'different window resize is manual',
+    IsManualWindowResize(
+      False, True,
+      iExpectedWidth, iExpectedHeight,
+      800, 500
+    )
+  );
+  AssertInteger(
+    'manual resize clears expected width',
+    0, iExpectedWidth
+  );
+  AssertInteger(
+    'manual resize clears expected height',
+    0, iExpectedHeight
+  );
+  AssertTrue(
+    'returning to an old internal size is manual',
+    IsManualWindowResize(
+      False, True,
+      iExpectedWidth, iExpectedHeight,
+      960, 600
+    )
+  );
+  AssertFalse(
+    'fullscreen resize is never persisted',
+    IsManualWindowResize(
+      True, True,
+      iExpectedWidth, iExpectedHeight,
+      800, 500
+    )
+  );
+  AssertFalse(
+    'resize before persistence initialization is ignored',
+    IsManualWindowResize(
+      False, False,
+      iExpectedWidth, iExpectedHeight,
+      800, 500
+    )
+  );
+
+  iPending := False;
+  iQuietMS := 0;
+  QueueResizeSave(iPending, iQuietMS);
+  AssertFalse(
+    'debounce waits',
+    AdvanceResizeSave(iPending, iQuietMS, 499, 500)
+  );
+  AssertTrue(
+    'debounce fires once',
+    AdvanceResizeSave(iPending, iQuietMS, 1, 500)
+  );
+  AssertFalse(
+    'debounce stays idle',
+    AdvanceResizeSave(iPending, iQuietMS, 500, 500)
   );
   WriteLn('test_drlwindow: PASS');
 end.
