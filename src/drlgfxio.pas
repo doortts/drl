@@ -343,6 +343,7 @@ var iSDLFlags   : TSDLIOFlags;
     iHeight     : Integer;
     iRequestedWidth : Integer;
     iRequestedHeight: Integer;
+    iRequestedSize  : TDRLWindowSize;
     iWindowMetrics : TDRLWindowMetrics;
     iWindowWidth   : LongInt;
     iWindowHeight  : LongInt;
@@ -361,6 +362,17 @@ begin
   if ForceWindowed then FFullscreen := False;
   iRequestedWidth  := Configuration.GetInteger( 'screen_width' );
   iRequestedHeight := Configuration.GetInteger( 'screen_height' );
+  if not FFullscreen then
+  begin
+    iRequestedSize := SelectWindowPixelSize(
+      iRequestedWidth,
+      iRequestedHeight,
+      Configuration.GetInteger('window_pixel_width'),
+      Configuration.GetInteger('window_pixel_height')
+    );
+    iRequestedWidth := iRequestedSize.Width;
+    iRequestedHeight := iRequestedSize.Height;
+  end;
   iWidth := iRequestedWidth;
   iHeight := iRequestedHeight;
 
@@ -547,6 +559,7 @@ var iWidth   : Integer;
     iCurrentWidth : LongInt;
     iCurrentHeight: LongInt;
     iWindowMetrics: TDRLWindowMetrics;
+    iRequestedSize : TDRLWindowSize;
     iTargetFullscreen: Boolean;
     iResetVideo   : Boolean;
 begin
@@ -558,6 +571,17 @@ begin
 
   iTargetFullscreen := Configuration.GetBoolean('fullscreen');
   if ForceWindowed then iTargetFullscreen := False;
+  if not iTargetFullscreen then
+  begin
+    iRequestedSize := SelectWindowPixelSize(
+      iWidth,
+      iHeight,
+      Configuration.GetInteger('window_pixel_width'),
+      Configuration.GetInteger('window_pixel_height')
+    );
+    iWidth := iRequestedSize.Width;
+    iHeight := iRequestedSize.Height;
+  end;
   iResetVideo := iTargetFullscreen <> FFullscreen;
 
   if not iResetVideo then
@@ -1126,10 +1150,26 @@ var iSDLFlags   : TSDLIOFlags;
     iWidth      : Integer;
     iHeight     : Integer;
     iWindowMetrics : TDRLWindowMetrics;
+    iRequestedSize : TDRLWindowSize;
+    iRequestedWidth : Integer;
+    iRequestedHeight: Integer;
 begin
   iSDLFlags := [ SDLIO_OpenGL ];
   iWidth    := Configuration.GetInteger('screen_width');
   iHeight   := Configuration.GetInteger('screen_height');
+  if not FFullscreen then
+  begin
+    iRequestedSize := SelectWindowPixelSize(
+      iWidth,
+      iHeight,
+      Configuration.GetInteger('window_pixel_width'),
+      Configuration.GetInteger('window_pixel_height')
+    );
+    iWidth := iRequestedSize.Width;
+    iHeight := iRequestedSize.Height;
+  end;
+  iRequestedWidth := iWidth;
+  iRequestedHeight := iHeight;
   if FFullscreen
     then Include( iSDLFlags, SDLIO_Fullscreen )
     else Include( iSDLFlags, SDLIO_Resizable );
@@ -1147,8 +1187,8 @@ begin
   if not FFullscreen then
     ConstrainWindowedDriver(
       TSDLIODriver(FIODriver),
-      Configuration.GetInteger('screen_width'),
-      Configuration.GetInteger('screen_height'),
+      iRequestedWidth,
+      iRequestedHeight,
       iSDLFlags
     );
   ApplyDrawableResize;

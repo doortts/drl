@@ -79,5 +79,20 @@ begin
     1280, 720, 1280, 720,
     ResolveWindowMetrics(1280, 720, 1466, 916, 0.0)
   );
+  AssertSize(
+    'saved manual pixels override selected resolution',
+    1600, 1000,
+    SelectWindowPixelSize(1920, 1200, 1600, 1000)
+  );
+  AssertSize(
+    'incomplete saved pixels are ignored',
+    1920, 1200,
+    SelectWindowPixelSize(1920, 1200, 1600, 0)
+  );
+  AssertSize(
+    'automatic remains automatic without a saved size',
+    0, 0,
+    SelectWindowPixelSize(0, 0, 0, 0)
+  );
   WriteLn('test_drlwindow: PASS');
 end.

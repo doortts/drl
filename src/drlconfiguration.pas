@@ -52,6 +52,8 @@ begin
   iGroup.AddInteger( 'display_mode', 0 );
   iGroup.AddInteger( 'screen_width', 0 );
   iGroup.AddInteger( 'screen_height', 0 );
+  iGroup.AddInteger( 'window_pixel_width', 0 );
+  iGroup.AddInteger( 'window_pixel_height', 0 );
 
   iGroup.AddToggle( 'fullscreen', True )
     .SetName('Fullscreen')

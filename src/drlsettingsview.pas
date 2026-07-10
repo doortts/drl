@@ -272,6 +272,8 @@ begin
                   Configuration.AccessInteger( 'screen_width' )^  := Width;
                   Configuration.AccessInteger( 'screen_height' )^ := Height;
                 end;
+                Configuration.AccessInteger( 'window_pixel_width' )^ := 0;
+                Configuration.AccessInteger( 'window_pixel_height' )^ := 0;
                 DRL.Reconfigure;
               end;
             end

@@ -28,6 +28,10 @@ function ResolveWindowMetrics(
   aAvailableWindowWidth, aAvailableWindowHeight: Integer;
   aPixelDensity: Single
 ): TDRLWindowMetrics;
+function SelectWindowPixelSize(
+  aScreenWidth, aScreenHeight,
+  aSavedWidth, aSavedHeight: Integer
+): TDRLWindowSize;
 
 implementation
 
@@ -116,6 +120,23 @@ begin
   );
   Result.PixelSize.Width := Max(1, Round(Result.WindowSize.Width * iDensity));
   Result.PixelSize.Height := Max(1, Round(Result.WindowSize.Height * iDensity));
+end;
+
+function SelectWindowPixelSize(
+  aScreenWidth, aScreenHeight,
+  aSavedWidth, aSavedHeight: Integer
+): TDRLWindowSize;
+begin
+  if (aSavedWidth > 0) and (aSavedHeight > 0) then
+  begin
+    Result.Width := aSavedWidth;
+    Result.Height := aSavedHeight;
+  end
+  else
+  begin
+    Result.Width := aScreenWidth;
+    Result.Height := aScreenHeight;
+  end;
 end;
 
 end.
