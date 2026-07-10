@@ -76,6 +76,7 @@ type
     procedure ExplosionMark( aCoord : TCoord2D; aColor : Byte; aDuration : DWord; aDelay : DWord ); override;
     function FullScreenCallback( aEvent : TIOEvent ) : Boolean;
     procedure ResetVideoMode;
+    procedure ApplyDrawableResize;
     procedure RecalculateScaling( aInitialize : Boolean );
     procedure CalculateConsoleParams;
     procedure SetMinimapScale( aScale : Byte );
@@ -143,11 +144,131 @@ implementation
 
 uses {$IFDEF WINDOWS}windows,{$ENDIF}
      classes, sysutils, math,
-     vdebug, vlog, vmath, vdf, vgl3library, vuid, vvision,
+     vdebug, vlog, vmath, vdf, vgl3library, vsdl3library, vuid, vvision,
      vglimage, vsdlio, vcolor, vglconsole, vioconsole,
      vtig, vtigstyle, vtigio,
      dfplayer, dfitem, dflevel,
-     drlbase, drlconfiguration, drlmodule;
+     drlbase, drlconfiguration, drlmodule, drlwindow;
+
+
+function ResolveWindowedMetrics(
+  aWindow: PSDL_Window;
+  aRequestedPixelWidth, aRequestedPixelHeight: Integer
+): TDRLWindowMetrics;
+var iDisplay        : SDL_DisplayID;
+    iBounds         : SDL_Rect;
+    iFallback       : TIOPoint;
+    iTop, iLeft     : LongInt;
+    iBottom, iRight : LongInt;
+    iAvailableWidth : Integer;
+    iAvailableHeight: Integer;
+    iDensity        : Single;
+    iMode           : PSDL_DisplayMode;
+begin
+  iFallback.Init(aRequestedPixelWidth, aRequestedPixelHeight);
+  if aWindow = nil then
+  begin
+    if not TSDLIODriver.GetCurrentResolution(iFallback) then
+      iFallback.Init(aRequestedPixelWidth, aRequestedPixelHeight);
+    iDisplay := SDL_GetPrimaryDisplay();
+  end
+  else
+  begin
+    SDL_GetWindowSize(aWindow, @iFallback.X, @iFallback.Y);
+    iDisplay := SDL_GetDisplayForWindow(aWindow);
+    if iDisplay = 0 then iDisplay := SDL_GetPrimaryDisplay();
+  end;
+
+  if (iDisplay <> 0) and SDL_GetDisplayUsableBounds(iDisplay, @iBounds) then
+  begin
+    iAvailableWidth := iBounds.w;
+    iAvailableHeight := iBounds.h;
+  end
+  else
+  begin
+    iAvailableWidth := iFallback.X;
+    iAvailableHeight := iFallback.Y;
+  end;
+
+  iTop := 0;
+  iLeft := 0;
+  iBottom := 0;
+  iRight := 0;
+  if aWindow <> nil then
+    if SDL_GetWindowBordersSize(aWindow, @iTop, @iLeft, @iBottom, @iRight) then
+    begin
+      Dec(iAvailableWidth, iLeft + iRight);
+      Dec(iAvailableHeight, iTop + iBottom);
+    end;
+
+  if aWindow = nil then
+  begin
+    iMode := SDL_GetCurrentDisplayMode(iDisplay);
+    if iMode = nil
+      then iDensity := SelectPreWindowPixelDensity(
+        SDL_GetDisplayContentScale(iDisplay),
+        0.0
+      )
+      else iDensity := SelectPreWindowPixelDensity(
+        SDL_GetDisplayContentScale(iDisplay),
+        iMode^.pixel_density
+      );
+  end
+  else
+    iDensity := SDL_GetWindowPixelDensity(aWindow);
+  Result := ResolveWindowMetrics(
+    aRequestedPixelWidth, aRequestedPixelHeight,
+    iAvailableWidth, iAvailableHeight,
+    iDensity
+  );
+end;
+
+
+procedure ConstrainWindowedDriver(
+  aDriver: TSDLIODriver;
+  aRequestedWidth, aRequestedHeight: Integer;
+  const aFlags: TSDLIOFlags
+);
+var iMetrics              : TDRLWindowMetrics;
+    iCurrentWidth         : LongInt;
+    iCurrentHeight        : LongInt;
+begin
+  iMetrics := ResolveWindowedMetrics(
+    aDriver.NativeWindow,
+    aRequestedWidth,
+    aRequestedHeight
+  );
+  iCurrentWidth := 0;
+  iCurrentHeight := 0;
+  if not SDL_GetWindowSize(
+    aDriver.NativeWindow,
+    @iCurrentWidth,
+    @iCurrentHeight
+  ) then
+  begin
+    iCurrentWidth := 0;
+    iCurrentHeight := 0;
+  end;
+
+  if (iCurrentWidth = iMetrics.WindowSize.Width) and
+     (iCurrentHeight = iMetrics.WindowSize.Height) then Exit;
+
+  Log(
+    'Constraining windowed mode from %dx%d to %dx%d.',
+    [iCurrentWidth, iCurrentHeight,
+     iMetrics.WindowSize.Width, iMetrics.WindowSize.Height]
+  );
+  if not aDriver.ResetVideoMode(
+    iMetrics.WindowSize.Width,
+    iMetrics.WindowSize.Height,
+    32,
+    aFlags
+  ) then
+    raise EIOException.CreateFmt(
+      'Could not constrain windowed mode to %dx%d.',
+      [iMetrics.WindowSize.Width, iMetrics.WindowSize.Height]
+    );
+end;
 
 
 procedure TDRLGFXIO.RecalculateScaling( aInitialize : Boolean );
@@ -220,6 +341,11 @@ var iSDLFlags   : TSDLIOFlags;
     iMode       : TIODisplayMode;
     iWidth      : Integer;
     iHeight     : Integer;
+    iRequestedWidth : Integer;
+    iRequestedHeight: Integer;
+    iWindowMetrics : TDRLWindowMetrics;
+    iWindowWidth   : LongInt;
+    iWindowHeight  : LongInt;
 begin
   {$IFDEF WINDOWS}
   if not GodMode then
@@ -233,12 +359,51 @@ begin
   {$ENDIF}
   FFullscreen := Configuration.GetBoolean( 'fullscreen' );
   if ForceWindowed then FFullscreen := False;
-  iWidth      := Configuration.GetInteger( 'screen_width' );
-  iHeight     := Configuration.GetInteger( 'screen_height' );
+  iRequestedWidth  := Configuration.GetInteger( 'screen_width' );
+  iRequestedHeight := Configuration.GetInteger( 'screen_height' );
+  iWidth := iRequestedWidth;
+  iHeight := iRequestedHeight;
 
   iSDLFlags := [ SDLIO_OpenGL ];
-  if FFullscreen then Include( iSDLFlags, SDLIO_Fullscreen );
+  if FFullscreen
+    then Include( iSDLFlags, SDLIO_Fullscreen )
+    else Include( iSDLFlags, SDLIO_Resizable );
+  if not FFullscreen then
+  begin
+    iWindowMetrics := ResolveWindowedMetrics(nil, iWidth, iHeight);
+    iWidth := iWindowMetrics.WindowSize.Width;
+    iHeight := iWindowMetrics.WindowSize.Height;
+  end;
   FIODriver := TSDLIODriver.Create( iWidth, iHeight, 32, iSDLFlags );
+  if not FFullscreen then
+    ConstrainWindowedDriver(
+      TSDLIODriver(FIODriver),
+      iRequestedWidth,
+      iRequestedHeight,
+      iSDLFlags
+    );
+
+  if not FFullscreen then
+  begin
+    iWindowWidth := 0;
+    iWindowHeight := 0;
+    SDL_GetWindowSize(
+      TSDLIODriver(FIODriver).NativeWindow,
+      @iWindowWidth,
+      @iWindowHeight
+    );
+    Log(
+      'Windowed mode %dx%d points, %dx%d drawable pixels at %.2fx.',
+      [iWindowWidth, iWindowHeight,
+       FIODriver.GetSizeX, FIODriver.GetSizeY,
+       NormalizePixelDensity(SDL_GetWindowPixelDensity(
+         TSDLIODriver(FIODriver).NativeWindow
+       ))]
+    );
+  end;
+
+  iWidth := FIODriver.GetSizeX;
+  iHeight := FIODriver.GetSizeY;
 
   begin
     Log('Display modes (%d)', [FIODriver.DisplayModes.Size] );
@@ -379,6 +544,11 @@ procedure TDRLGFXIO.Reconfigure(aConfig: TLuaConfig);
 var iWidth   : Integer;
     iHeight  : Integer;
     iOpacity : Integer;
+    iCurrentWidth : LongInt;
+    iCurrentHeight: LongInt;
+    iWindowMetrics: TDRLWindowMetrics;
+    iTargetFullscreen: Boolean;
+    iResetVideo   : Boolean;
 begin
   FadeReset;
   iWidth  := Configuration.GetInteger('screen_width');
@@ -386,11 +556,41 @@ begin
   iOpacity:= Configuration.GetInteger( 'minimap_opacity' );
   FMinimap.SetOpacity( iOpacity );
 
-  if ( ( iWidth > 0 ) and ( iWidth <> FIODriver.GetSizeX ) ) or
-     ( ( iHeight > 0 ) and ( iHeight <> FIODriver.GetSizeY ) ) or
-     ( ( not ForceWindowed) and  ( Configuration.GetBoolean('fullscreen') <> FFullscreen ) ) then
+  iTargetFullscreen := Configuration.GetBoolean('fullscreen');
+  if ForceWindowed then iTargetFullscreen := False;
+  iResetVideo := iTargetFullscreen <> FFullscreen;
+
+  if not iResetVideo then
   begin
-    FFullscreen := Configuration.GetBoolean('fullscreen');
+    if FFullscreen then
+      iResetVideo :=
+        ( (iWidth > 0) and (iWidth <> FIODriver.GetSizeX) ) or
+        ( (iHeight > 0) and (iHeight <> FIODriver.GetSizeY) )
+    else
+    begin
+      iWindowMetrics := ResolveWindowedMetrics(
+        TSDLIODriver(FIODriver).NativeWindow,
+        iWidth,
+        iHeight
+      );
+      iCurrentWidth := 0;
+      iCurrentHeight := 0;
+      if not SDL_GetWindowSize(
+        TSDLIODriver(FIODriver).NativeWindow,
+        @iCurrentWidth,
+        @iCurrentHeight
+      ) then
+        iResetVideo := True
+      else
+        iResetVideo :=
+          (iWindowMetrics.WindowSize.Width <> iCurrentWidth) or
+          (iWindowMetrics.WindowSize.Height <> iCurrentHeight);
+    end;
+  end;
+
+  if iResetVideo then
+  begin
+    FFullscreen := iTargetFullscreen;
     ResetVideoMode;
   end
   else
@@ -925,16 +1125,46 @@ procedure TDRLGFXIO.ResetVideoMode;
 var iSDLFlags   : TSDLIOFlags;
     iWidth      : Integer;
     iHeight     : Integer;
+    iWindowMetrics : TDRLWindowMetrics;
 begin
   iSDLFlags := [ SDLIO_OpenGL ];
   iWidth    := Configuration.GetInteger('screen_width');
   iHeight   := Configuration.GetInteger('screen_height');
-  if FFullscreen then Include( iSDLFlags, SDLIO_Fullscreen );
+  if FFullscreen
+    then Include( iSDLFlags, SDLIO_Fullscreen )
+    else Include( iSDLFlags, SDLIO_Resizable );
+  if not FFullscreen then
+  begin
+    iWindowMetrics := ResolveWindowedMetrics(
+      TSDLIODriver(FIODriver).NativeWindow,
+      iWidth,
+      iHeight
+    );
+    iWidth := iWindowMetrics.WindowSize.Width;
+    iHeight := iWindowMetrics.WindowSize.Height;
+  end;
   TSDLIODriver(FIODriver).ResetVideoMode( iWidth, iHeight, 32, iSDLFlags );
+  if not FFullscreen then
+    ConstrainWindowedDriver(
+      TSDLIODriver(FIODriver),
+      Configuration.GetInteger('screen_width'),
+      Configuration.GetInteger('screen_height'),
+      iSDLFlags
+    );
+  ApplyDrawableResize;
+  TGLConsoleRenderer( FConsole ).HideCursor;
+end;
+
+procedure TDRLGFXIO.ApplyDrawableResize;
+begin
   RecalculateScaling( True );
   CalculateConsoleParams;
-  TGLConsoleRenderer( FConsole ).SetPositionScale( (FIODriver.GetSizeX - FConsoleSizeX*FFontSizeX*FFontMult) div 2, 0, FLineSpace, FFontMult );
-  TGLConsoleRenderer( FConsole ).HideCursor;
+  TGLConsoleRenderer( FConsole ).SetPositionScale(
+    (FIODriver.GetSizeX - FConsoleSizeX*FFontSizeX*FFontMult) div 2,
+    0,
+    FLineSpace,
+    FFontMult
+  );
   SetMinimapScale(FMiniScale);
   DeviceChanged;
   SpriteMap.Recalculate;
@@ -957,6 +1187,13 @@ end;
 function TDRLGFXIO.OnEvent( const iEvent : TIOEvent ) : Boolean;
 var iValue : Integer;
 begin
+  if (iEvent.EType = VEVENT_SYSTEM) and
+     (iEvent.System.Code = VIO_SYSEVENT_RESIZE) then
+  begin
+    ApplyDrawableResize;
+    Exit(True);
+  end;
+
   if ( iEvent.EType = VEVENT_PADAXIS ) then
   begin
     iValue := iEvent.PadAxis.Value;
@@ -1197,4 +1434,3 @@ end;
 
 
 end.
-

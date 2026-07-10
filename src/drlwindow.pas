@@ -20,6 +20,9 @@ function FitWindowSize(
   aAvailableWidth, aAvailableHeight: Integer
 ): TDRLWindowSize;
 function NormalizePixelDensity(aDensity: Single): Single;
+function SelectPreWindowPixelDensity(
+  aContentScale, aModePixelDensity: Single
+): Single;
 function ResolveWindowMetrics(
   aRequestedPixelWidth, aRequestedPixelHeight,
   aAvailableWindowWidth, aAvailableWindowHeight: Integer;
@@ -72,6 +75,15 @@ function NormalizePixelDensity(aDensity: Single): Single;
 begin
   if aDensity <= 0.0 then Exit(1.0);
   Exit(aDensity);
+end;
+
+function SelectPreWindowPixelDensity(
+  aContentScale, aModePixelDensity: Single
+): Single;
+begin
+  if aModePixelDensity > 0.0 then
+    Exit(aModePixelDensity);
+  Exit(NormalizePixelDensity(aContentScale));
 end;
 
 function ResolveWindowMetrics(

@@ -30,6 +30,10 @@ begin
 end;
 
 begin
+  if SelectPreWindowPixelDensity(1.0, 2.0) <> 2.0 then
+    raise Exception.Create('current display mode density must override content scale');
+  if SelectPreWindowPixelDensity(1.5, 0.0) <> 1.5 then
+    raise Exception.Create('content scale must be the density fallback');
   AssertSize(
     'keeps a fitting window unchanged',
     1280, 720,
